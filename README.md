@@ -15,3 +15,5 @@ G04 P0.4
 ### Will this work for you?
 Probably not. I have very superficial knowledge about the machines this is made for, I don't even know the name of the plasma cutter that we use. I was given direction on how to design the algorithm by a machining instructor, for whom this code is for.
 If you do decide to use this for your machines make sure to do some tests, run an example .NC file through and make sure that in multiple places the output is what you'd expect. If your machine is damaged or you lose a part due to this, I am NOT responsible. A warning similar to this will be appended to the output after every successful output. Please read the warnings!!
+
+Additional Note: This program does not add in any header or footer information. If your input .NC file contains information at the top, that will have to be added back in manually. I'm working on a way to save the header and footer information.
