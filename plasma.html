@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Plasma Code Insertion</title>
+        <style>
+            code {
+                background-color: #eee;
+                border: 1px solid #999;
+                display: block;
+                padding: 5px;
+                max-height: 20vh;
+            }
+        </style>
+    </head>
+    <body>
+        <p>Created by: Eldon Williams 2021</p><br>
+        <input type="file" id="file-upload"><br><br>
+        <button id="submit" disabled>Start GCode Insertion</button><br><br>
+        <code id="output">Waiting for input...</code>
+
+        <script>
+            // Dowload function provided by https://ourcodeworld.com/articles/read/189/how-to-create-a-file-and-generate-a-download-with-javascript-in-the-browser-without-a-server
+            function download(filename, text) {
+                var element = document.createElement('a');
+                element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+                element.setAttribute('download', filename);
+
+                element.style.display = 'none';
+                document.body.appendChild(element);
+
+                element.click();
+
+                document.body.removeChild(element);
+            }
+            //
+
+            // Inspired by https://stackoverflow.com/questions/51026420/filereader-readastext-async-issues
+            // Written by me
+            function promisifyFileReader(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+
+                    reader.addEventListener('error', reject);
+                    reader.addEventListener('abort', reject);
+                    reader.addEventListener('loadend', (event) => {
+                        const content = reader.result;
+                        resolve(content.split('\n'));
+                    });
+
+                    reader.readAsText(file);
+                });
+            };
+            //
+
+            const fileInput = document.getElementById("file-upload");
+            const submitButton = document.getElementById("submit");
+            const status = document.getElementById("status");
+            const output = document.getElementById("output");
+
+            // output helper functions
+            const appendOutput = (message) => {
+                output.innerHTML += `${output.innerHTML.length > 0 ? '<br>' : ''}${message}`;
+            };
+
+            const clearOutput = () => output.innerHTML = "";
+            //
+
+            fileInput.addEventListener("change", (event) => submitButton.disabled = fileInput.files[0] === undefined);
+
+            submitButton.addEventListener("click", (event) => {
+                clearOutput();
+                const file = fileInput.files[0];
+                if (!file) return appendOutput(`You have not selected a file, please select one.`);
+                console.log(file)
+                appendOutput(`Attempting to read file: ${fileInput.files[0].name}`);
+                
+                promisifyFileReader(file).then((content) => {
+                    appendOutput(`File loaded succesfully.<br>Loaded ${content.length} lines<br>Plasma will now attempt to search and replace.<br>`);
+                    appendOutput(`This may take a few seconds.<br>`);
+                    
+                    setTimeout(() => {
+                        var startTime = performance.now();
+                        var output = ""; // Massive string containing the output
+                        var lines = []; // Massive array containing lines, will be reconciled with line numbers at some point
+                        content.forEach((value, index) => {
+                            if (!value.startsWith('N')) return; // Only count GCode commands
+                            var splitLine = value.split(' ');
+                            splitLine.shift();
+                            lines.push(splitLine);
+                        });
+                        // loop through lines, search and replace
+                        function doLoop() { // The loop must be done multiple times because the array will change
+                            console.log(`Doing loop.`);
+                            var skipNext = false;
+                            var doInsert = false;
+                            var skipAll = false;
+                            lines.forEach((line, index) => {
+                                if (skipNext === true || skipAll === true) {
+                                    skipNext = false;
+                                    return;
+                                }
+                                if (line[0] === "G0" && line[1].startsWith("Z1")) { // We're looking for this!
+                                    skipNext = true;
+                                    doInsert = true;
+                                    return;
+                                }
+                                if (doInsert === true) {
+                                    var constructedArray = lines;
+                                    var half1 = constructedArray.slice(0, index);
+                                    var half2 = constructedArray.slice(index);
+                                    console.log(half1[half1.length - 3]);
+                                    half1[half1.length - 2][0] = "G00" // Change command to avoid loops
+                                    half2.shift(); // Remove two deletion items
+                                    half2.shift();
+
+                                    constructedArray = new Array().concat(half1, [
+                                        ["G31", "Z", "-100", "F19.685"],
+                                        ["G92", "Z-0.04"],
+                                        ["G00", "Z0.1500"],
+                                        ["M03"],
+                                        ["G04", "P0.4"],
+                                    ], half2);
+
+                                    lines = constructedArray;
+                                    skipAll = true;
+                                    return;
+                                }
+                                // Leave the line be if it isn't what we're looking for
+                            });
+                            if (skipAll === true) doLoop(); // Run again because we aren't done
+                        }
+                        doLoop();
+                        // Reconcile line numbers
+                        console.log(lines);
+                        lines.forEach((value, index) => {
+                            output += `\nN${((index % 990) * 10) + 100} ${value.join(' ')}`
+                        });
+
+                        var endTime = performance.now();
+                        appendOutput(`Search and replace has finished in ${(endTime - startTime).toFixed(2)}ms, downloading file now.`);
+                        download(`plasma-${file.name}`, output)
+                        appendOutput(`Note: Please make sure to check the file in multiple places! I am not responsible for machine damage.`);
+                    }, 1000); // Set a timer for 1 second so the appendOutput has a minute to apply; appendOutput won't work once forEach starts
+                }, (err) => {
+                    appendOutput(`Failed to read file; check console for issue(s).`);
+                    console.log(`Error Log Next:`);
+                    console.log(err);
+                });
+            });
+        </script>
+    </body>
+</html>
